@@ -113,19 +113,23 @@ def IslandPosition(length, taille_moy, distance_moy):
         distance = np.random.randint(distance_moy[0], distance_moy[1])
 
         # on calcule la nouvelle distance
-        position = tab[-1][0]+distance
-        taille = np.random.randint(taille_moy[0], taille_moy[1]) # on tire une taille
-        
+        position = tab[-1][0] + distance
+         # on tire une taille
+        taille = np.random.randint(taille_moy[0], taille_moy[1])
+
         # on checke les conditions
-        # si la nouvelle borne inferieure est superieur a la derniere borne superieur   
-        if int(position-(taille/2)) > int(tab[-1][0]+(tab[-1][1]/2)+1):
-            tab = np.vstack((tab, [position, taille])) # on ajoute la nouvelle position
-    
-    tab = np.delete(tab, [0,1],0)
+        # si la nouvelle borne inferieure est superieur a la derniere borne superieur
+        if int(position - (taille / 2)) > int(tab[-1][0] + (tab[-1][1] / 2) + 1):
+            tab = np.vstack((tab, [position, taille]))  # on ajoute la nouvelle position
+
+    tab = np.delete(tab, [0, 1], 0)
     return tab
 
-# Compute random methylated cytosine position
+
 def MethylPosition(tab):
+# Compute random methylated cytosine position
+
+
     # retourne la position des methyl dans le genome en suivant la position des island
     position = []
     for i,j in tab:
