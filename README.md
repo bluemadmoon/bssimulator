@@ -12,5 +12,3 @@ Usage :
 $python bisulfite-build.py -i [input file]
 
 Use -h argument for further help on usage.
-
-Copyright (c) 2012 Madjid BESSOUL and Guillaume VIEJO. All rights reserved.
