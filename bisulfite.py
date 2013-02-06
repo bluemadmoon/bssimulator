@@ -162,7 +162,7 @@ def main():
     # ARGUMENT MANAGER
     # -----------------------------------
     
-    # Usual verifications and warnings
+    # Usual verifications and warnings (errors)
     if not sys.argv[1:]:
         sys.stdout.write("Sorry: you must specify at least 1 argument")
         sys.stdout.write("More help avalaible with -h or --help option")
