@@ -12,7 +12,7 @@ a modified index (using bisulfite-build.py)
 Usage :
 $python bisulfite-build.py -i [input file]
 
-Use -h argument for further help on usage.
+Use -h (or --help) argument for further help on usage and possible arguments .
 """
 
 import sys
@@ -132,7 +132,8 @@ def MethylPosition(tab):
     # retourne la position des methyl dans le genome en suivant la position des island
     position = []
     for i,j in tab:
-        CGindex = np.array([m.start() for m in re.finditer('CG', str(cur_record.seq[int(i-j/2):int(i+j/2)]))])
+        CGindex = np.array([m.start() for m in re.finditer \
+            ('CG', str(cur_record.seq[int(i - j / 2): int(i + j / 2)]))])
         if len(CGindex) <> 0:  # conditions to check if there are cpg in the island
             a, b = np.histogram(np.random.random(len(CGindex)), len(CGindex))
             position.extend(CGindex[np.where(a>0)]+(i-(j/2)))
@@ -148,17 +149,18 @@ def read_generation(gen_len, rest_nb):
     # We sort them and make them unique
     cuts = np.unique(np.sort(np.random.randint(gen_len, size = rest_nb)))
 
+    # We only keep reads of size ranging from 100 to 200 bp
     reads = np.zeros([1,2])
-
     for i in xrange(1, len(cuts)):
-          if (cuts[i]-cuts[i-1])>50 and (cuts[i]-cuts[i-1])<100:
-            reads.append([cuts[i-1], cuts[i]])
-            
-    return np.array(reads)
+          if (cuts[i] - cuts[i - 1]) > 50 and (cuts[i] - cuts[i - 1]) < 100:
+            reads = np.vstack((reads, [cuts[i], cuts[i-1]]))
+
+    # Delete the first line (containing [0, 0])
+    reads = np.delete(reads, 0, 0)
+    return reads
     
     
 def main():
-    
     # -----------------------------------
     # ARGUMENT MANAGER
     # -----------------------------------
@@ -178,6 +180,19 @@ def main():
         help="The genome input file, must be a fasta or fastq file", 
         default=False)
 
+    # Argument to set the length of the reads to be sequenced
+    parser.add_option("-R", 
+        "--read_length", 
+        action="store", 
+        help="Size of the reads (50 by default)", 
+        default=50)
+
+    parser.add_option("-S",
+        "--seq", 
+        action="store", 
+        help="Number of sequencing runs (higher number gives better coverage, but much \
+            more computation time (not recommended to go above 200, default = 100) ", 
+        default=100)
 
     (options, args) = parser.parse_args() 
 
@@ -234,8 +249,9 @@ def main():
         print " - Computing the bisulfite process"
         cur_record.seq = Seq(bs_transform(str(cur_record.seq), pos), IUPAC.unambiguous_dna)
         print " - Simulating reads sequencing"
+        print "   Read length : %i" % options.read_length
         k = 0
-        for i in xrange(100): # Number of sequencings.
+        for i in xrange(options.seq): # Number of sequencings.
             site = read_generation(length, int(0.05*length))
             for i in site[:,0]:
                   output_file.write(">%s|r%i\n"%(cur_record.name, int(k)))
