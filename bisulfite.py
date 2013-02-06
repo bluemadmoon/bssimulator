@@ -140,20 +140,21 @@ def MethylPosition(tab):
     position = np.vstack((np.array(position), np.random.rand(len(position))))
     return position.T
 
-# Fuction that simulates a 50bp long read generation
-def read_generation(L, N):
-    # input: length of the genome, number of restriction site
-    # output: [position min, position max] of read to extract in the genome
-    # Not all the genome is extracted since only reads ranging from 50 to 100 bp are selected.
-    site = np.sort(np.random.randint(L, size = N))
-    #taille = np.array([site[i]-site[i-1] for i in xrange(1, len(site))])
-    site2 = []
-    # selection of only 50-100 bp
-    for i in xrange(1, len(site)):
-          if (site[i]-site[i-1])>50 and (site[i]-site[i-1])<100:
-            site2.append([site[i-1], site[i]])
-              
-    return np.array(site2)
+def read_generation(gen_len, rest_nb):
+# 100 to 200bp reads generation by single strand DNA cutting by 
+# simulating restriction enzymes
+
+    # Randomly choose rest_nb restriction sites along the sequence
+    # We sort them and make them unique
+    cuts = np.unique(np.sort(np.random.randint(gen_len, size = rest_nb)))
+
+    reads = np.zeros([1,2])
+
+    for i in xrange(1, len(cuts)):
+          if (cuts[i]-cuts[i-1])>50 and (cuts[i]-cuts[i-1])<100:
+            reads.append([cuts[i-1], cuts[i]])
+            
+    return np.array(reads)
     
     
 def main():
