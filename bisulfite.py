@@ -15,10 +15,10 @@ $python bisulfite-build.py -i [input file]
 Use -h (or --help) argument for further help on usage and possible arguments .
 """
 
-import sys
-import os
+import sys, os, random, re
 from optparse import OptionParser
 from time import strftime
+
 # Trying to import Numpy package # REQUIRED
 try:
     import numpy as np
@@ -35,16 +35,6 @@ except ImportError:
 from Bio.Seq import Seq
 from Bio.Alphabet import IUPAC
 
-# Tryin to import Matplotlib
-try:
-    import matplotlib.pyplot as plt
-    mpl = True
-except ImportError:
-    mpl = False
-    print "Matplotlib package is absent, you can't visualise histograms"
-
-import random
-import re
 
 
 # Function for boolean random weight picking (True : methylated C)
@@ -84,24 +74,28 @@ def query_yes_no(question, default="yes"):
                              "(or 'y' or 'n').\n")
 
 
-def bs_transform(seq, pos):
-    # Bisulfite transformation function
+def bs_transform(seq, Methyl_positions, read_position, read_length):
+# Bisulfite transformation function
+# Transform all unmethylated Cs to Ts
+
 
     # Empty list which will contain the transformed sequence
     res_seq = list(seq.replace('C', 'T'))
 
+
+
     # For every C (i = position, w = methylation probability) ...
-    for i, w in pos:
-        if w_choice(w):
-            res_seq[int(i)] = 'C'
+    for i, w in Methyl_positions:
+        # If there is a methyl in the current read ...
+        if i in xrange(read_position, read_position + read_length):
+            if w_choice(w):
+               res_seq[int(i - read_position)] = 'C'
 
     # Return the transformed sequence as str
     return ''.join(res_seq)
 
 
 def IslandPosition(length, taille_moy, distance_moy):
-    # entree : taille total , taille moyenne = [min, max], distance moyenne = [min, max],
-    # then tirage
 
     tab = np.zeros((2, 2))  # initialisation [position_centre, longueur_total]
 
@@ -141,7 +135,7 @@ def MethylPosition(tab):
     position = np.vstack((np.array(position), np.random.rand(len(position))))
     return position.T
 
-def read_generation(gen_len, rest_nb):
+def read_generation(gen_len, rest_nb, read_length):
 # 100 to 200bp reads generation by single strand DNA cutting by 
 # simulating restriction enzymes
 
@@ -149,14 +143,17 @@ def read_generation(gen_len, rest_nb):
     # We sort them and make them unique
     cuts = np.unique(np.sort(np.random.randint(gen_len, size = rest_nb)))
 
-    # We only keep reads of size ranging from 100 to 200 bp
-    reads = np.zeros([1,2])
-    for i in xrange(1, len(cuts)):
-          if (cuts[i] - cuts[i - 1]) > 50 and (cuts[i] - cuts[i - 1]) < 100:
-            reads = np.vstack((reads, [cuts[i], cuts[i-1]]))
 
-    # Delete the first line (containing [0, 0])
-    reads = np.delete(reads, 0, 0)
+    # We only keep reads of size ranging from 100 to 200 bp
+    # Also, trim the reads to make the comply to the selected size by the user
+    # This is not very useful in the case of a simulation, but in real data,
+    # reads are often trimmed car the end of the reads tends to have lower
+    # sequençing quality, besides the need to have equal size reads.
+    reads = []
+    for i in xrange(1, len(cuts)):
+          if (cuts[i] - cuts[i - 1]) > 100 and (cuts[i] - cuts[i - 1]) < 200:
+            reads.append(cuts[i])
+
     return reads
     
     
@@ -184,8 +181,9 @@ def main():
     parser.add_option("-R", 
         "--read_length", 
         action="store", 
-        help="Size of the reads (50 by default)", 
+        help="Size of the reads (must be >10 and <100, set to 50 by default)", 
         default=50)
+
 
     parser.add_option("-S",
         "--seq", 
@@ -199,6 +197,10 @@ def main():
     if not options.input:
         sys.stdout.write("Sorry: you must specify an input file\n")
         sys.stdout.write("More help avalaible with -h or --help option\n")
+        sys.exit(0)
+
+    if options.read_length < 10 or options.read_length > 100:
+        sys.stdout.write("Read length incorrect.\n Must be in [10, 100] range\nQuitting")
         sys.exit(0)
         
     # -----------------------------------
@@ -218,14 +220,22 @@ def main():
     base = os.path.basename(options.input)
     
     # Create an input_file_index.fasta name
-    output_filename = os.getcwd() + '/' + os.path.splitext(base)[0] + '_bs.fasta'   
-    profile_output_filename = os.getcwd() + '/' + os.path.splitext(base)[0] + '_profile.dat'    
+    output_filename = os.getcwd() \
+    + '/' \
+    + os.path.splitext(base)[0] \
+    + '_bs.fasta' 
+
+    profile_output_filename = os.getcwd() \
+    + '/' \
+    + os.path.splitext(base)[0] \
+    + '_profile.dat'    
     
     # File to store the reads
     output_file = open(output_filename,'a')
     
     # File to store the profile
     profile_output_file = open(profile_output_filename, 'a')
+
 
     global cur_record
     for cur_record in SeqIO.parse(input_file, "fasta"):
@@ -239,25 +249,32 @@ def main():
 
         print " - Computing random methylation"
         island_position = IslandPosition(length, [100, 800], [1000, 3000])
-        pos = MethylPosition(island_position)
+        Methyl_pos = MethylPosition(island_position)
 
         # A not so dirty to write data to a file !
-        for i in xrange(len(pos)):
-            profile_output_file.write("%i\t%.3f\n" % (pos[i, 0], pos[i, 1]))
+        for i in xrange(len(Methyl_pos)):
+            profile_output_file.write("%i\t%.3f\n" % (Methyl_pos[i, 0], Methyl_pos[i, 1]))
         profile_output_file.close()
 
-        print " - Computing the bisulfite process"
-        cur_record.seq = Seq(bs_transform(str(cur_record.seq), pos), IUPAC.unambiguous_dna)
+        print " - Computing the bisulfite process and sequencing"
+
+        readLength = options.read_length
+        nbSeq = int(options.seq)
         print " - Simulating reads sequencing"
-        print "   Read length : %i" % options.read_length
+        print "   Read length : %d" % int(readLength)
+        print "   Number of sequencings : %d" % int(nbSeq)
         k = 0
-        for i in xrange(options.seq): # Number of sequencings.
-            site = read_generation(length, int(0.05*length))
-            for i in site[:,0]:
-                  output_file.write(">%s|r%i\n"%(cur_record.name, int(k)))
-                  k = k+1
-                  # we take only the 50 elements from each reads
-                  output_file.write(str(cur_record.seq[i:i+50])+'\n')
+        for i in xrange(nbSeq): # Number of sequencings.
+            read_positions = read_generation(length, int(0.05*length), readLength)
+            for i in read_positions:
+
+                cur_read = cur_record.seq[i:i + readLength]
+                bs_read = bs_transform(str(cur_read), Methyl_pos, i, readLength)
+
+                output_file.write(">%s|r%i\n"%(cur_record.name, int(k)))
+                k = k + 1
+                # we take only the 50 elements from each reads
+                output_file.write(str(bs_read)+'\n')
     
     input_file.close()
     output_file.close()
