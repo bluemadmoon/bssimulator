@@ -33,7 +33,6 @@ except ImportError:
     print "Biopython package is required to launch the program. \nExitting"
 
 from Bio.Seq import Seq
-from Bio.Alphabet import IUPAC
 
 
 def w_choice(prob):
@@ -48,30 +47,6 @@ def w_choice(prob):
         n = n - weight
     return state
 
-
-def query_yes_no(question, default="yes"):
-
-    valid = {"yes": True,   "y": True,  "ye": True,
-             "no": False,     "n": False}
-    if default == None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
-    else:
-        raise ValueError("invalid default answer: '%s'" % default)
-
-    while True:
-        sys.stdout.write(question + prompt)
-        choice = raw_input().lower()
-        if default is not None and choice == '':
-            return valid[default]
-        elif choice in valid:
-            return valid[choice]
-        else:
-            sys.stdout.write("Please respond with 'yes' or 'no' "\
-                             "(or 'y' or 'n').\n")
 
 
 def bs_transform(seq, Methyl_positions, read_length):
@@ -115,6 +90,20 @@ def IslandPosition(length, taille_moy, distance_moy):
     tab = np.delete(tab, [0, 1], 0)
     return tab
 
+def MethLevelSample(size):
+    # Choose a different level of methylation weighted by a given probability
+    # Using the same weights as in Martin C. et al. article (A mostly
+    # traditional approach improves alignemnt of bisulfite-converted DNA)
+    # We assign 5 distinct levels of methylation, and we assume that we have 
+    # higher methylation probability in CpG islands, thus allowing for some 
+    # Cs to be methylated with lower probability
+
+    sample = []
+    for i in range(size):
+        weights = [.05, .05, .05, .05, .8]
+        levels = [0, .1, .2, .5, 1]
+        sample.append(np.random.choice(levels, p=weights))
+    return sample
 
 def MethylPosition(tab):
 # Compute random methylated cytosine position
@@ -129,7 +118,7 @@ def MethylPosition(tab):
             a, b = np.histogram(np.random.random(len(CGindex)), len(CGindex))
             position.extend(CGindex[np.where(a>0)]+(i-(j/2)))
     
-    position = np.vstack((np.array(position), np.random.rand(len(position))))
+    position = np.vstack((np.array(position), MethLevelSample(len(position))))
     return position.T
 
 def read_generation(gen_len, rest_nb, read_length):
@@ -178,13 +167,15 @@ def main():
     parser.add_option("-R", 
         "--read_length", 
         action="store", 
+        type=int,
         help="Size of the reads (must be >10 and <100, set to 50 by default)", 
         default=50)
 
-
+    # Argument to set the number of sequencing runs
     parser.add_option("-S",
         "--seq", 
         action="store", 
+        type=int,
         help="Number of sequencing runs (higher number gives better coverage, but much \
             more computation time (not recommended to go above 200, default = 100) ", 
         default=100)
@@ -244,10 +235,13 @@ def main():
 
         print "Processing gene : %s" % cur_record.name
 
-        print " - Computing random methylation"
+        print " - Sampling random methylation"
         island_position = IslandPosition(length, [100, 800], [1000, 3000])
         methyl_pos = MethylPosition(island_position)
 
+        # Saving the methylation profile.
+        # This is the actual methylation state of the DNA, the actual information
+        # we will try to infer. We're keeping it for validation purpose 
         # A not so dirty to write data to a file !
         for i in xrange(len(methyl_pos)):
             profile_output_file.write("%i\t%.3f\n" % (methyl_pos[i, 0], methyl_pos[i, 1]))
@@ -256,30 +250,33 @@ def main():
         print " - Computing the bisulfite process and sequencing"
 
         read_length = options.read_length
-        nbSeq = int(options.seq)
-        print " - Simulating reads sequencing"
+        nbSeq = options.seq
+
         print "   Read length : %d" % int(read_length)
-        print "   Number of sequencings : %d" % int(nbSeq)
 
         k = 0
         for i in xrange(nbSeq): # Number of sequencings.
+
+            sys.stdout.write("\r   Sequencing progress : %i/%i" %(i, nbSeq)) 
+            sys.stdout.flush()
+
             bs_record = Seq(bs_transform(str(cur_record.seq),
                 methyl_pos,
                 read_length))
 
             read_positions = read_generation(length, int(0.01*length), read_length)
-            for i in read_positions:
+            for j in read_positions:
 
-                cur_read = bs_record[i:i + read_length]
+                cur_read = bs_record[j:j + read_length]
 
-                output_file.write(">%s|r%i\n"%(cur_record.name, int(k)))
-                # we take only the 50 elements from each reads
+                output_file.write(">%s|r%i\n"%(cur_record.name, k))
+            
                 output_file.write(str(cur_read)+'\n')
                 k += 1
-    
+
     input_file.close()
     output_file.close()
-    print "Process began at %s : " % begin_time
+    print "\nProcess began at %s : " % begin_time
     print "Process terminated at %s : " % strftime("%Y-%m-%d %H:%M:%S")
     
 if __name__ == '__main__':
