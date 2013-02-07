@@ -36,9 +36,9 @@ from Bio.Seq import Seq
 from Bio.Alphabet import IUPAC
 
 
-
-# Function for boolean random weight picking (True : methylated C)
 def w_choice(prob):
+# Function for boolean random weight picking (True : methylated C)
+
 
     lst = [(True, prob), (False, (1 - prob))]
     n = random.uniform(0, 1)
@@ -74,7 +74,7 @@ def query_yes_no(question, default="yes"):
                              "(or 'y' or 'n').\n")
 
 
-def bs_transform(seq, Methyl_positions, read_position, read_length):
+def bs_transform(seq, Methyl_positions, read_length):
 # Bisulfite transformation function
 # Transform all unmethylated Cs to Ts
 
@@ -82,14 +82,11 @@ def bs_transform(seq, Methyl_positions, read_position, read_length):
     # Empty list which will contain the transformed sequence
     res_seq = list(seq.replace('C', 'T'))
 
-
-
     # For every C (i = position, w = methylation probability) ...
     for i, w in Methyl_positions:
         # If there is a methyl in the current read ...
-        if i in xrange(read_position, read_position + read_length):
-            if w_choice(w):
-               res_seq[int(i - read_position)] = 'C'
+        if w_choice(w):
+            res_seq[int(i)] = 'C'
 
     # Return the transformed sequence as str
     return ''.join(res_seq)
@@ -200,7 +197,7 @@ def main():
         sys.exit(0)
 
     if options.read_length < 10 or options.read_length > 100:
-        sys.stdout.write("Read length incorrect.\n Must be in [10, 100] range\nQuitting")
+        sys.stdout.write("Read length incorrect.\n Must be in [10, 100] range\nQuitting\n")
         sys.exit(0)
         
     # -----------------------------------
@@ -249,32 +246,36 @@ def main():
 
         print " - Computing random methylation"
         island_position = IslandPosition(length, [100, 800], [1000, 3000])
-        Methyl_pos = MethylPosition(island_position)
+        methyl_pos = MethylPosition(island_position)
 
         # A not so dirty to write data to a file !
-        for i in xrange(len(Methyl_pos)):
-            profile_output_file.write("%i\t%.3f\n" % (Methyl_pos[i, 0], Methyl_pos[i, 1]))
+        for i in xrange(len(methyl_pos)):
+            profile_output_file.write("%i\t%.3f\n" % (methyl_pos[i, 0], methyl_pos[i, 1]))
         profile_output_file.close()
 
         print " - Computing the bisulfite process and sequencing"
 
-        readLength = options.read_length
+        read_length = options.read_length
         nbSeq = int(options.seq)
         print " - Simulating reads sequencing"
-        print "   Read length : %d" % int(readLength)
+        print "   Read length : %d" % int(read_length)
         print "   Number of sequencings : %d" % int(nbSeq)
+
         k = 0
         for i in xrange(nbSeq): # Number of sequencings.
-            read_positions = read_generation(length, int(0.05*length), readLength)
+            bs_record = Seq(bs_transform(str(cur_record.seq),
+                methyl_pos,
+                read_length))
+
+            read_positions = read_generation(length, int(0.01*length), read_length)
             for i in read_positions:
 
-                cur_read = cur_record.seq[i:i + readLength]
-                bs_read = bs_transform(str(cur_read), Methyl_pos, i, readLength)
+                cur_read = bs_record[i:i + read_length]
 
                 output_file.write(">%s|r%i\n"%(cur_record.name, int(k)))
-                k = k + 1
                 # we take only the 50 elements from each reads
-                output_file.write(str(bs_read)+'\n')
+                output_file.write(str(cur_read)+'\n')
+                k += 1
     
     input_file.close()
     output_file.close()
