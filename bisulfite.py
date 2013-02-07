@@ -33,6 +33,9 @@ except ImportError:
     print "Biopython package is required to launch the program. \nExitting"
 
 from Bio.Seq import Seq
+from BCBio import GFF
+from Bio.SeqRecord import SeqRecord
+from Bio.SeqFeature import SeqFeature, FeatureLocation
 
 
 def w_choice(prob):
@@ -68,35 +71,42 @@ def bs_transform(seq, Methyl_positions, read_length):
 
 
 def IslandPosition(length, taille_moy, distance_moy):
+# Generation aléatoire de CpG Islands sur le genome
+# On donne une taille moyenne ainsi quel a distance moyenne entre les islands
 
-    tab = np.zeros((2, 2))  # initialisation [position_centre, longueur_total]
+    # initialisation [position_centre, longueur_total]
+    island_loc = np.zeros((2, 2))  
 
     # tant que la derniere position + la taille est inferieure a la taille totale
-    while int(tab[-1][0] + tab[-1][1] + distance_moy[1]) < length:
+    while int(island_loc[-1][0] + island_loc[-1][1] + distance_moy[1]) < length:
 
         # on tire une distance entre les centres
         distance = np.random.randint(distance_moy[0], distance_moy[1])
 
         # on calcule la nouvelle distance
-        position = tab[-1][0] + distance
+        position = island_loc[-1][0] + distance
+
          # on tire une taille
         taille = np.random.randint(taille_moy[0], taille_moy[1])
 
         # on checke les conditions
         # si la nouvelle borne inferieure est superieur a la derniere borne superieur
-        if int(position - (taille / 2)) > int(tab[-1][0] + (tab[-1][1] / 2) + 1):
-            tab = np.vstack((tab, [position, taille]))  # on ajoute la nouvelle position
+        if int(position - (taille / 2)) > int(island_loc[-1][0] + (island_loc[-1][1] / 2) + 1):
 
-    tab = np.delete(tab, [0, 1], 0)
-    return tab
+            # on ajoute la nouvelle position
+            island_loc = np.vstack((island_loc, [position, taille]))  
+
+    # On supprime la première ligne       
+    island_loc = np.delete(island_loc, [0, 1], 0)
+    return island_loc
 
 def MethLevelSample(size):
-    # Choose a different level of methylation weighted by a given probability
-    # Using the same weights as in Martin C. et al. article (A mostly
-    # traditional approach improves alignemnt of bisulfite-converted DNA)
-    # We assign 5 distinct levels of methylation, and we assume that we have 
-    # higher methylation probability in CpG islands, thus allowing for some 
-    # Cs to be methylated with lower probability
+# Choose a different level of methylation weighted by a given probability
+# Using the same weights as in Martin C. et al. article (A mostly
+# traditional approach improves alignemnt of bisulfite-converted DNA)
+# We assign 5 distinct levels of methylation, and we assume that we have 
+# higher methylation probability in CpG islands, thus allowing for some 
+# Cs to be methylated with lower probability
 
     sample = []
     for i in range(size):
@@ -121,14 +131,13 @@ def MethylPosition(tab):
     position = np.vstack((np.array(position), MethLevelSample(len(position))))
     return position.T
 
-def read_generation(gen_len, rest_nb, read_length):
+def readGeneration(gen_len, rest_nb, read_length):
 # 100 to 200bp reads generation by single strand DNA cutting by 
 # simulating restriction enzymes
 
     # Randomly choose rest_nb restriction sites along the sequence
     # We sort them and make them unique
     cuts = np.unique(np.sort(np.random.randint(gen_len, size = rest_nb)))
-
 
     # We only keep reads of size ranging from 100 to 200 bp
     # Also, trim the reads to make the comply to the selected size by the user
@@ -143,6 +152,36 @@ def read_generation(gen_len, rest_nb, read_length):
     return reads
     
     
+def CpGIslandsToGFF(island_location):
+# Output methylation regions (CpG Islands, namely) to a GFF3 compliant file 
+
+    out_file = os.getcwd() \
+    + '/' \
+    + os.path.splitext(base)[0] \
+    + '.gff'
+
+
+    seq = cur_record.seq
+    rec = SeqRecord(seq, "ID1") 
+
+    qualifiers = {"source": "bssimulation", "score": '.', "ID": cur_record.name}
+    sub_qualifiers = {"source": "bssimulation"}
+    top_feature = SeqFeature(FeatureLocation(0, len(cur_record)), type="region", strand=0,
+                         qualifiers=qualifiers)
+    for i in island_location:
+        begin = int(i[0] - i[1]/2)
+        end = int(i[0] + i[1]/2)
+
+        top_feature.sub_features.append(SeqFeature(FeatureLocation(begin, end), 
+            type="CpG_island", 
+            strand=0,
+            qualifiers=sub_qualifiers))
+
+    rec.features = [top_feature]
+ 
+    with open(out_file, "w") as out_handle:
+        GFF.write([rec], out_handle)
+
 def main():
     # -----------------------------------
     # ARGUMENT MANAGER
@@ -191,10 +230,10 @@ def main():
         sys.stdout.write("Read length incorrect.\n Must be in [10, 100] range\nQuitting\n")
         sys.exit(0)
         
-    # -----------------------------------
-    # END ARGUMENT MANAGER
-    # -----------------------------------
 
+    # -----------------------------------
+    # BEGIN FILE MANAGEMENT
+    # -----------------------------------
     # File existence test
     try:
         open(options.input, 'r')
@@ -206,6 +245,7 @@ def main():
     
     # Retrive input filename base
     base = os.path.basename(options.input)
+    global base
     
     # Create an input_file_index.fasta name
     output_filename = os.getcwd() \
@@ -224,7 +264,9 @@ def main():
     # File to store the profile
     profile_output_file = open(profile_output_filename, 'a')
 
-
+    # -----------------------------------
+    # BEGIN MAIN LOOP OVER SEQUENCES
+    # -----------------------------------
     global cur_record
     for cur_record in SeqIO.parse(input_file, "fasta"):
 
@@ -236,16 +278,19 @@ def main():
         print "Processing gene : %s" % cur_record.name
 
         print " - Sampling random methylation"
-        island_position = IslandPosition(length, [100, 800], [1000, 3000])
+        island_position = IslandPosition(length, [200, 3000], [6000, 20000])
         methyl_pos = MethylPosition(island_position)
 
-        # Saving the methylation profile.
-        # This is the actual methylation state of the DNA, the actual information
-        # we will try to infer. We're keeping it for validation purpose 
+        # Saving the methylation profile at single-base precision
+        # This is the actual methylation state of the DNA, information
+        # we will try to infer by aligment. We're keeping it for validation purpose 
         # A not so dirty to write data to a file !
         for i in xrange(len(methyl_pos)):
             profile_output_file.write("%i\t%.3f\n" % (methyl_pos[i, 0], methyl_pos[i, 1]))
         profile_output_file.close()
+
+        # Create a genome annotation with the position of the CpG Islands
+        CpGIslandsToGFF(island_position)
 
         print " - Computing the bisulfite process and sequencing"
 
@@ -264,7 +309,7 @@ def main():
                 methyl_pos,
                 read_length))
 
-            read_positions = read_generation(length, int(0.01*length), read_length)
+            read_positions = readGeneration(length, int(0.01*length), read_length)
             for j in read_positions:
 
                 cur_read = bs_record[j:j + read_length]
